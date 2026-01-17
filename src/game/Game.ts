@@ -67,6 +67,7 @@ export class Game {
   private lastLaunchTime: number = 0;
   private isAnimatingBricks: boolean = false;
   private brickAnimationProgress: number = 0;
+  private ballsGainedThisTurn: number = 0;
 
   // Dimensions
   private gameWidth: number = 0;
@@ -146,7 +147,9 @@ export class Game {
       this.gameWidth,
       this.gameHeight,
       this.ballRadius,
-      this.launchZoneTop
+      this.launchZoneTop,
+      this.renderer.getLaunchZoneY(),
+      this.gridOffsetY
     );
 
     // Center launch position if not set
@@ -168,7 +171,7 @@ export class Game {
         break;
 
       case 'aiming':
-        this.handleAimingInput(type, position);
+        this.handleAimingInput(type, position, event.isMouse);
         break;
 
       case 'animating':
@@ -202,7 +205,7 @@ export class Game {
     }
   }
 
-  private handleAimingInput(type: string, position: Vector2): void {
+  private handleAimingInput(type: string, position: Vector2, isMouse?: boolean): void {
     const launchY = this.renderer.getLaunchZoneY();
 
     if (type === 'aimStart') {
@@ -228,26 +231,39 @@ export class Game {
           Math.min(this.gameWidth - this.ballRadius, position.x)
         );
       } else {
-        // Calculate aim direction (inverted for natural feel)
-        const dx = this.launchPosition.x - position.x;
-        const dy = launchY - position.y;
+        let dx: number;
+        let dy: number;
 
-        // Only aim upward
-        if (dy > 10) {
-          const angle = Math.atan2(-dy, dx);
+        if (isMouse) {
+          // Mouse: point-to-aim (aim toward cursor)
+          dx = position.x - this.launchPosition.x;
+          dy = position.y - launchY;
+        } else {
+          // Touch: slingshot style (aim away from drag)
+          dx = this.launchPosition.x - position.x;
+          dy = launchY - position.y;
+        }
+
+        // Only aim upward (dy must be negative for upward direction)
+        const aimingUp = isMouse ? dy < -10 : dy > 10;
+        if (aimingUp) {
+          // For mouse, dy is negative when aiming up, so we use it directly
+          // For touch, dy is positive when aiming up, so we negate it
+          const normalizedDy = isMouse ? dy : -dy;
+          const angle = Math.atan2(normalizedDy, dx);
           const minAngleRad = (MIN_LAUNCH_ANGLE * Math.PI) / 180;
 
-          // Clamp angle
+          // Clamp angle to prevent near-horizontal shots
           let clampedAngle = angle;
-          if (clampedAngle > Math.PI / 2 - minAngleRad) {
-            clampedAngle = Math.PI / 2 - minAngleRad;
-          } else if (clampedAngle < -Math.PI / 2 + minAngleRad) {
-            clampedAngle = -Math.PI / 2 + minAngleRad;
+          if (clampedAngle > -minAngleRad) {
+            clampedAngle = -minAngleRad;
+          } else if (clampedAngle < -Math.PI + minAngleRad) {
+            clampedAngle = -Math.PI + minAngleRad;
           }
 
           this.aimDirection = {
             x: Math.cos(clampedAngle),
-            y: -Math.abs(Math.sin(clampedAngle)),
+            y: Math.sin(clampedAngle),
           };
 
           // Calculate trajectory preview
@@ -385,9 +401,10 @@ export class Game {
 
   private spawnNewRow(): void {
     const { bricks, pickups } = this.gridManager.spawnNewRow(
-      this.level,
+      this.ballCount,
       this.bricks,
-      this.pickups
+      this.pickups,
+      this.level
     );
 
     this.bricks.push(...bricks);
@@ -505,9 +522,10 @@ export class Game {
           pickup.collected = true;
           pickup.collectProgress = 0;
 
-          // Add balls
+          // Add balls and track gains this turn
           const value = PICKUP_VALUES[pickup.type];
           this.ballCount += value;
+          this.ballsGainedThisTurn += value;
 
           // Create collect effect
           this.collectEffects.push({
@@ -582,6 +600,7 @@ export class Game {
     this.aimDirection = null;
     this.trajectoryPoints = [];
     this.speedMultiplier = 1;
+    this.ballsGainedThisTurn = 0;
 
     this.state = 'aiming';
   }
@@ -611,6 +630,8 @@ export class Game {
         brick.destroyProgress += deltaTime / (DESTROY_ANIMATION_DURATION / 1000);
       }
     }
+    // Remove bricks that have completed their destroy animation
+    this.bricks = this.bricks.filter((b) => !b.destroying || b.destroyProgress < 1);
   }
 
   private updateCollectedPickups(deltaTime: number): void {
@@ -619,6 +640,8 @@ export class Game {
         pickup.collectProgress += deltaTime / (COLLECT_ANIMATION_DURATION / 1000);
       }
     }
+    // Remove pickups that have completed their collect animation
+    this.pickups = this.pickups.filter((p) => !p.collected || p.collectProgress < 1);
   }
 
   private render(): void {
@@ -664,7 +687,7 @@ export class Game {
     const currentHighScore = this.settings.easyMode
       ? this.highScores.easy
       : this.highScores.normal;
-    this.renderer.drawHeader(this.level, this.ballCount, currentHighScore, this.settings.easyMode);
+    this.renderer.drawHeader(this.level, this.ballCount, currentHighScore, this.settings.easyMode, this.ballsGainedThisTurn);
 
     // Get max hits for color scaling
     const maxHits = Math.max(...this.bricks.map((b) => b.hits), 1);
@@ -687,11 +710,21 @@ export class Game {
     // Draw collect effects
     this.renderer.drawCollectEffects(this.collectEffects);
 
-    // Draw launch point
+    // Calculate remaining balls to show next to launch point
+    // During aiming: show full ball count
+    // During animation: show balls not yet launched (counting down)
+    let remainingBalls = this.ballCount;
+    const isAnimating = this.state === 'animating' || this.state === 'launching';
+    if (isAnimating) {
+      remainingBalls = this.balls.length - this.ballsLaunched;
+    }
+
+    // Draw launch point with remaining ball count
     this.renderer.drawLaunchPoint(
       this.launchPosition,
       this.settings.easyMode,
-      this.isMovingLaunchPoint
+      this.isMovingLaunchPoint,
+      remainingBalls
     );
 
     // Draw trajectory preview when aiming
@@ -700,14 +733,7 @@ export class Game {
     }
 
     // Draw speed button during animation
-    const isAnimating = this.state === 'animating' || this.state === 'launching';
     this.renderer.drawSpeedButton(this.speedMultiplier, isAnimating);
-
-    // Draw balls in flight counter
-    if (isAnimating) {
-      const inFlight = this.balls.filter((b) => b.active).length;
-      this.renderer.drawBallsInFlightCounter(inFlight);
-    }
   }
 
   start(): void {

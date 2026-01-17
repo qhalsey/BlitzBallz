@@ -133,7 +133,7 @@ export class Renderer {
     }
   }
 
-  drawHeader(level: number, ballCount: number, highScore: number, easyMode: boolean): void {
+  drawHeader(level: number, ballCount: number, highScore: number, easyMode: boolean, ballsGainedThisTurn: number = 0): void {
     const padding = 10 * this.scale;
     const fontSize = 14 * this.scale;
 
@@ -145,11 +145,28 @@ export class Renderer {
     this.ctx.textAlign = 'left';
     this.ctx.fillText(`Level ${level}`, padding, this.headerHeight / 2);
 
-    // Ball count (center)
+    // Ball count (center) - show base count and any gained this turn
     this.ctx.textAlign = 'center';
-    this.ctx.fillText(`x${ballCount}`, this.width / 2, this.headerHeight / 2);
+    const baseCount = ballCount - ballsGainedThisTurn;
+    const ballText = `x${baseCount}`;
+
+    if (ballsGainedThisTurn > 0) {
+      // Measure base text to position the bonus
+      const baseWidth = this.ctx.measureText(ballText).width;
+      const bonusText = ` (+${ballsGainedThisTurn})`;
+
+      // Draw base count
+      this.ctx.fillText(ballText, this.width / 2 - this.ctx.measureText(bonusText).width / 2, this.headerHeight / 2);
+
+      // Draw bonus in green
+      this.ctx.fillStyle = '#22c55e';
+      this.ctx.fillText(bonusText, this.width / 2 + baseWidth / 2, this.headerHeight / 2);
+    } else {
+      this.ctx.fillText(`x${ballCount}`, this.width / 2, this.headerHeight / 2);
+    }
 
     // High score (right)
+    this.ctx.fillStyle = COLORS.textPrimary;
     this.ctx.textAlign = 'right';
     this.ctx.fillText(`Best: ${highScore}`, this.width - padding, this.headerHeight / 2);
 
@@ -178,24 +195,14 @@ export class Renderer {
     const w = this.cellWidth - gap;
     const h = this.cellHeight - gap;
 
-    // Destruction animation
+    // Destruction animation - simple fade out
     let alpha = 1;
-    let scale = 1;
     if (brick.destroying) {
       alpha = 1 - brick.destroyProgress;
-      scale = 1 + brick.destroyProgress * 0.3;
     }
 
     this.ctx.save();
     this.ctx.globalAlpha = alpha;
-
-    if (scale !== 1) {
-      const centerX = x + w / 2;
-      const centerY = y + h / 2;
-      this.ctx.translate(centerX, centerY);
-      this.ctx.scale(scale, scale);
-      this.ctx.translate(-centerX, -centerY);
-    }
 
     // Color based on hit count relative to max
     const ratio = brick.hits / Math.max(maxHits, 1);
@@ -229,20 +236,12 @@ export class Renderer {
     const y = this.gridOffsetY + pickup.gridY * this.cellHeight + this.cellHeight / 2;
 
     let alpha = 1;
-    let scale = 1;
     if (pickup.collected) {
       alpha = 1 - pickup.collectProgress;
-      scale = 1 + pickup.collectProgress * 0.5;
     }
 
     this.ctx.save();
     this.ctx.globalAlpha = alpha;
-
-    if (scale !== 1) {
-      this.ctx.translate(x, y);
-      this.ctx.scale(scale, scale);
-      this.ctx.translate(-x, -y);
-    }
 
     const color = PICKUP_COLORS[pickup.type];
     const value = PICKUP_VALUES[pickup.type];
@@ -286,7 +285,10 @@ export class Renderer {
     this.ctx.shadowBlur = 0;
   }
 
-  drawLaunchPoint(position: Vector2, easyMode: boolean, isMoving: boolean): void {
+  drawLaunchPoint(position: Vector2, easyMode: boolean, isMoving: boolean, remainingBalls: number = 1): void {
+    // Don't draw if no balls remaining
+    if (remainingBalls <= 0) return;
+
     const y = this.headerHeight + this.gridHeight + this.launchZoneHeight / 2;
 
     // Draw launch point indicator
@@ -311,6 +313,14 @@ export class Renderer {
     this.ctx.lineTo(position.x + 6 * this.scale, y - this.ballRadius * 3.5);
     this.ctx.closePath();
     this.ctx.fill();
+
+    // Draw remaining balls count next to launch point
+    const fontSize = 12 * this.scale;
+    this.ctx.fillStyle = COLORS.textPrimary;
+    this.ctx.font = `bold ${fontSize}px sans-serif`;
+    this.ctx.textAlign = 'left';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText(`x${remainingBalls}`, position.x + this.ballRadius * 2 + 5 * this.scale, y);
   }
 
   drawTrajectory(points: TrajectoryPoint[]): void {
@@ -391,18 +401,9 @@ export class Renderer {
     this.ctx.fillText(text, x + buttonSize / 2, y + buttonSize / 2);
   }
 
-  drawBallsInFlightCounter(count: number): void {
-    if (count <= 0) return;
-
-    const fontSize = 12 * this.scale;
-    const padding = 10 * this.scale;
-    const y = this.height - this.launchZoneHeight / 2;
-
-    this.ctx.fillStyle = COLORS.textSecondary;
-    this.ctx.font = `${fontSize}px sans-serif`;
-    this.ctx.textAlign = 'left';
-    this.ctx.textBaseline = 'middle';
-    this.ctx.fillText(`${count} in flight`, padding, y);
+  drawBallsInFlightCounter(_count: number): void {
+    // Counter is now shown next to launch point in drawLaunchPoint
+    // This method is kept for compatibility but no longer draws anything
   }
 
   drawMenuOverlay(): void {

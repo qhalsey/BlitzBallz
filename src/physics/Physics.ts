@@ -18,18 +18,24 @@ export class Physics {
   private gameWidth: number = 0;
   private _gameHeight: number = 0;
   private ballRadius: number = 8;
+  private headerHeight: number = 0;
   private launchZoneTop: number = 0;
+  private launchY: number = 0;
 
   updateDimensions(
     gameWidth: number,
     gameHeight: number,
     ballRadius: number,
-    launchZoneTop: number
+    launchZoneTop: number,
+    launchY: number,
+    headerHeight: number = 0
   ): void {
     this.gameWidth = gameWidth;
     this._gameHeight = gameHeight;
     this.ballRadius = ballRadius;
+    this.headerHeight = headerHeight;
     this.launchZoneTop = launchZoneTop;
+    this.launchY = launchY;
   }
 
   updateBall(ball: Ball, deltaTime: number, speedMultiplier: number): void {
@@ -57,9 +63,9 @@ export class Physics {
       return { collided: true, side: 'right' };
     }
 
-    // Top wall
-    if (ball.position.y - r <= 0) {
-      ball.position.y = r;
+    // Top wall (header boundary)
+    if (ball.position.y - r <= this.headerHeight) {
+      ball.position.y = this.headerHeight + r;
       ball.velocity.y = Math.abs(ball.velocity.y);
       return { collided: true, side: 'top' };
     }
@@ -68,7 +74,8 @@ export class Physics {
   }
 
   checkBottomCollision(ball: Ball): boolean {
-    return ball.position.y + this.ballRadius >= this.launchZoneTop;
+    // Ball returns when it reaches the launch Y position (center of launch zone)
+    return ball.position.y >= this.launchY;
   }
 
   checkBrickCollision(
@@ -179,13 +186,14 @@ export class Physics {
     const r = this.ballRadius;
     type HitResult = { point: Vector2; normal: Vector2; distance: number };
     const hits: HitResult[] = [];
+    const topBoundary = this.headerHeight + r;
 
     // Left wall
     if (direction.x < 0) {
       const t = (r - origin.x) / direction.x;
       if (t > 0) {
         const point = { x: r, y: origin.y + direction.y * t };
-        if (point.y >= r && point.y <= this.launchZoneTop - r) {
+        if (point.y >= topBoundary && point.y <= this.launchZoneTop - r) {
           const dist = t * Math.sqrt(direction.x ** 2 + direction.y ** 2);
           hits.push({ point, normal: { x: 1, y: 0 }, distance: dist });
         }
@@ -197,18 +205,18 @@ export class Physics {
       const t = (this.gameWidth - r - origin.x) / direction.x;
       if (t > 0) {
         const point = { x: this.gameWidth - r, y: origin.y + direction.y * t };
-        if (point.y >= r && point.y <= this.launchZoneTop - r) {
+        if (point.y >= topBoundary && point.y <= this.launchZoneTop - r) {
           const dist = t * Math.sqrt(direction.x ** 2 + direction.y ** 2);
           hits.push({ point, normal: { x: -1, y: 0 }, distance: dist });
         }
       }
     }
 
-    // Top wall
+    // Top wall (header boundary)
     if (direction.y < 0) {
-      const t = (r - origin.y) / direction.y;
+      const t = (topBoundary - origin.y) / direction.y;
       if (t > 0) {
-        const point = { x: origin.x + direction.x * t, y: r };
+        const point = { x: origin.x + direction.x * t, y: topBoundary };
         if (point.x >= r && point.x <= this.gameWidth - r) {
           const dist = t * Math.sqrt(direction.x ** 2 + direction.y ** 2);
           hits.push({ point, normal: { x: 0, y: 1 }, distance: dist });

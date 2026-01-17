@@ -12,6 +12,7 @@ export interface InputEvent {
   type: InputEventType;
   position: Vector2;
   delta?: Vector2;
+  isMouse?: boolean;
 }
 
 export type InputCallback = (event: InputEvent) => void;
@@ -125,7 +126,7 @@ export class InputHandler {
     this.startPosition = { ...position };
     this.lastPosition = { ...position };
 
-    this.emit({ type: 'aimStart', position });
+    this.emit({ type: 'aimStart', position, isMouse: true });
   }
 
   private handleMouseMove(e: MouseEvent): void {
@@ -140,7 +141,7 @@ export class InputHandler {
 
     this.lastPosition = { ...position };
 
-    this.emit({ type: 'aimMove', position, delta });
+    this.emit({ type: 'aimMove', position, delta, isMouse: true });
   }
 
   private handleMouseUp(e: MouseEvent): void {
@@ -155,9 +156,9 @@ export class InputHandler {
     this.isDragging = false;
 
     if (wasTap) {
-      this.emit({ type: 'tap', position });
+      this.emit({ type: 'tap', position, isMouse: true });
     } else {
-      this.emit({ type: 'aimEnd', position });
+      this.emit({ type: 'aimEnd', position, isMouse: true });
     }
 
     this.startPosition = null;

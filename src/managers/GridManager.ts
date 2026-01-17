@@ -4,9 +4,8 @@ import {
   GRID_ROWS,
   MIN_BRICKS_PER_ROW,
   MAX_BRICKS_PER_ROW,
-  MAX_PICKUPS_PER_ROW,
   BRICK_HIT_VARIANCE,
-  PICKUP_WEIGHTS,
+  MULTIPLIER_SPAWN_INTERVALS,
 } from '../constants';
 
 export class GridManager {
@@ -35,11 +34,11 @@ export class GridManager {
     };
   }
 
-  spawnNewRow(level: number, _existingBricks: Brick[], _existingPickups: Pickup[]): { bricks: Brick[]; pickups: Pickup[] } {
+  spawnNewRow(ballCount: number, _existingBricks: Brick[], _existingPickups: Pickup[], level: number = 1): { bricks: Brick[]; pickups: Pickup[] } {
     const newBricks: Brick[] = [];
     const newPickups: Pickup[] = [];
 
-    // Determine available columns (not already occupied in row 0)
+    // Determine available columns (not already occupied in row 2)
     const occupiedColumns = new Set<number>();
 
     // Get random number of bricks (3-5)
@@ -52,43 +51,47 @@ export class GridManager {
     const brickColumns = availableColumns.slice(0, numBricks);
     brickColumns.forEach((col) => occupiedColumns.add(col));
 
-    // Create bricks
+    // Create bricks - hits based on ball count (1:1 ratio)
+    // Spawn at row 2 to leave top 2 rows empty for bouncing
     for (const col of brickColumns) {
-      const baseHits = level;
+      const baseHits = Math.max(1, ballCount);
       const variance = Math.floor(baseHits * BRICK_HIT_VARIANCE);
       const hits = Math.max(1, baseHits + Math.floor(Math.random() * (variance * 2 + 1)) - variance);
 
-      newBricks.push(this.createBrick(col, 0, hits));
+      newBricks.push(this.createBrick(col, 2, hits));
     }
 
-    // Spawn pickups in remaining columns
+    // Spawn pickups in remaining columns based on round-based intervals
     const remainingColumns = availableColumns.filter((col) => !occupiedColumns.has(col));
     this.shuffleArray(remainingColumns);
 
-    const numPickups = Math.min(MAX_PICKUPS_PER_ROW, remainingColumns.length);
-    const pickupColumns = remainingColumns.slice(0, numPickups);
-
-    for (const col of pickupColumns) {
-      // Determine pickup type based on weights
-      const type = this.getRandomPickupType();
-      newPickups.push(this.createPickup(col, 0, type));
+    // Determine which pickups should spawn this round
+    const pickupsToSpawn = this.getPickupsForRound(level);
+    
+    // Spawn each pickup in a random remaining column
+    for (let i = 0; i < pickupsToSpawn.length && i < remainingColumns.length; i++) {
+      newPickups.push(this.createPickup(remainingColumns[i], 2, pickupsToSpawn[i]));
     }
 
     return { bricks: newBricks, pickups: newPickups };
   }
 
-  private getRandomPickupType(): PickupType {
-    const totalWeight = Object.values(PICKUP_WEIGHTS).reduce((sum, w) => sum + w, 0);
-    let random = Math.random() * totalWeight;
-
-    for (const [type, weight] of Object.entries(PICKUP_WEIGHTS)) {
-      random -= weight;
-      if (random <= 0) {
-        return type as PickupType;
+  private getPickupsForRound(level: number): PickupType[] {
+    const pickups: PickupType[] = [];
+    
+    // Always spawn 1 standard ball pickup every round
+    pickups.push('ball');
+    
+    // Check if any multiplier should spawn based on round intervals
+    const multiplierTypes: PickupType[] = ['x2', 'x3', 'x5', 'x10'];
+    for (const type of multiplierTypes) {
+      const interval = MULTIPLIER_SPAWN_INTERVALS[type];
+      if (level % interval === 0) {
+        pickups.push(type);
       }
     }
-
-    return 'ball'; // Default fallback
+    
+    return pickups;
   }
 
   moveBricksDown(bricks: Brick[]): void {
